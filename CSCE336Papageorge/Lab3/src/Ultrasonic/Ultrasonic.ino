@@ -1,14 +1,16 @@
 #include <Arduino.h>
 #include <Servo.h>
 
-#define SERVO_PIN 6
+#define SERVO_PIN 3
 #define TRIGGER_PIN 7
-#define ECHO_PIN 8
-#define LEFT_LED_PIN 13
+#define ECHO_PIN 0
+#define LEFT_LED_PIN 5
 #define RIGHT_LED_PIN 2
+#define LED 6
 
 Servo myservo;
 int pos = 0;
+int counter = 0;
 
 // Ultrasonic sensor variables
 volatile uint16_t pulseStartTime = 0;
@@ -22,21 +24,22 @@ bool isRightWallDetected = false;
 void setup() {
 
   Serial.begin(9600);
-  myservo.attach(6);
 
   // Configure Timer 1 for input capture with prescaler 8 and TOP value 0xFFFF
   TCCR1A = 0;
-  TCCR1B = (1 << ICES1) | (1 << CS11) | (1 << ICNC1);
-  TIMSK1 = (1 << ICIE1);
+  TCCR1B = (1 << CS11); // prescale 8
 
   // Configure Servo PWM on Timer 2
-  TCCR2A = (1 << WGM20) | (1 << WGM21) | (1 << COM2B1);
-  TCCR2B = (1 << CS21);
-  OCR2A = 249;  // set TOP value to 249 for 50Hz frequency
-  OCR2B = 38;  // set initial duty cycle to 1.5ms for center position
+  TCCR2A = (1 << WGM20) | (1 << WGM21) | (1 << COM2A1);
+  TCCR2B = (1 << CS21)| (1 << CS20) | (1 << CS22); // prescale 1024
+  OCR2A = 23;  // set initial duty cycle to 1.5ms for center position
 
   // Set Servo PWM pin as output
-  DDRD |= (1 << SERVO_PIN);
+  DDRB |= (1 << SERVO_PIN);
+
+  //set LED pin to output and turn off
+  DDRD |= (1 << LED);
+  PORTD &= ~(1 << LED);
 
   // Set Trigger pin as output and Echo pin as input
   DDRD |= (1 << TRIGGER_PIN);
@@ -54,20 +57,31 @@ void wallLEDs() {
   PORTD |= (1 << TRIGGER_PIN);
   delayMicroseconds(10);
   PORTD &= ~(1 << TRIGGER_PIN);
-
   // Wait for the input capture interrupt to capture the echo pulse width
-  /*while (pulseWidth == 0) {
-    Serial.println(pulseWidth);    
-  }*/
+  while (PINB&(1<<ECHO_PIN) == 0) {}
+  TCNT1 = 0;
+  ICR1 = 0;
+  while (PINB&(1<<ECHO_PIN) == 1){
+    //PORTD |= (1 << LED);
+    
+  }
+  PORTD &= ~(1 << LED);
+  counter = ICR1;
+  counter *= 2;
+  Serial.println(counter);
+  delay(1000);  
 
-  uint16_t distance = pulseWidth / 58;
 
-  // Servo PWM pulse width based on the distance
-  uint8_t servoPulseWidth = map(distance, 0, 12, 20, 50);
-  OCR2B = servoPulseWidth;
+
+
+
+
+
+
+
 
   // Which LEDs to light up based on the distance and servo position
-  if (distance <= 12) {
+  /*if (distance <= 12) {
     if (servoPulseWidth >= 35) {
       isLeftWallDetected = true;
     } else if (servoPulseWidth <= 25) {
@@ -95,49 +109,25 @@ void wallLEDs() {
     digitalWrite(RIGHT_LED_PIN, LOW);
   }
 
-  pulseWidth = 0;
+  pulseWidth = 0;*/
 }
 
 void servoSweep(){
-  // move servo from -90 degrees to +90 degrees
-  for (pos = -90; pos <= 90; pos += 1) { 
-    OCR2B = map(pos, -90, 90, 26, 77);  // set duty cycle based on servo position
-    delay(15);
-  }
-  // move servo from +90 degrees to -90 degrees
-  for (pos = 90; pos >= -90; pos -= 1) { 
-    OCR2B = map(pos, -90, 90, 26, 77);  // set duty cycle based on servo position
-    delay(15);
-  }
+  //23 counts = 1.5ms
+  OCR2A = 23; // center
+  delay(1000);
+  OCR2A = 7; // left
+  delay(1000);
+  OCR2A = 37; // right
+  delay(1000);
+  OCR2A = 23; // center
+  delay(1000);
 }
 
-void pulse() {
-  static uint8_t state = 0;
-  static uint16_t pulseWidth = 0;
-  static uint16_t lastTime = 0;
-  uint16_t time = ICR1;
-
-  if (state == 0) {
-    // Capture rising edge
-    lastTime = time;
-    pulseWidth = 0;
-    state = 1;
-  } else {
-    // Capture falling edge
-    pulseWidth = time - lastTime;
-    pulseWidth = (pulseWidth > 255) ? 255 : pulseWidth; // Limit pulse width to 255
-    pulseWidth = (pulseWidth < 50) ? 0 : pulseWidth; // Ignore noise
-    pulseWidth = pulseWidth / 2; // Divide by 2 to convert to microseconds
-    pulseWidth = (pulseWidth > 255) ? 255 : pulseWidth; // Limit pulse width to 255
-    wallLEDs();
-    state = 0;
-  }
-}
 
 void loop() {
   //servoSweep();
-  //wallLEDs();
-  pulse();
+  wallLEDs();
 }
 
 
